@@ -11,9 +11,9 @@
 
 : around content -> {
 
-<div class="pagination" style="margin: 1px 0;">
 <div class="pull-right">
-<ul>
+<div class="pagination" style="margin: 1px 0;">
+<ul class="list-inline">
 : if ( $c.stash.enable_short ) {
 <li class="prev <: ( $c.req.param('t') == 'sh' ) ? "active" : "" :>"><a href="<: $c.req.uri_for('/list/'~uri_escape($c.args.service_name)~'/'~uri_escape($c.args.section_name), [t=>'sh']) :>">hour・8hours(1min)</a></li>
 <li class="prev <: ( $c.req.param('t') == 'sd' ) ? "active" : "" :>"><a href="<: $c.req.uri_for('/list/'~uri_escape($c.args.service_name)~'/'~uri_escape($c.args.section_name), [t=>'sd']) :>">day・3days(1min)</a></li>
@@ -32,7 +32,7 @@
 : } # for graphs
 
 <div class="pull-right">
-<button type="button" class="btn danger hxr_confirm_button" data-confirm="remove all graphs in '<: $c.args.section_name :>' section?" data-uri="<: $c.req.uri_for('/delete/'~uri_escape($c.args.service_name)~'/'~uri_escape($c.args.section_name)) :>">remove all graphs in this section</button>
+<button type="button" class="btn btn-danger hxr_confirm_button" data-confirm="remove all graphs in '<: $c.args.section_name :>' section?" data-uri="<: $c.req.uri_for('/delete/'~uri_escape($c.args.service_name)~'/'~uri_escape($c.args.section_name)) :>">remove all graphs in this section</button>
 </div>
 
 : } # arround

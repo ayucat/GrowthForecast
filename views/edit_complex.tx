@@ -143,7 +143,7 @@
 <option value="0">disable</option>
 </select>
 </td>
-<td style="text-align:center;"><button id="add-new-row" class="btn" style="padding: 3px 14px 4px;">追加</button></td>
+<td style="text-align:center;"><button id="add-new-row" class="btn btn-default" style="padding: 3px 14px 4px;">追加</button></td>
 </tr>
 
 : my $type_hash = { 'AREA' => 'AREA', 'LINE1' => 'LINE', 'LINE2' => 'LINE(Bold)' }
@@ -177,9 +177,9 @@
 </fieldset>
 
 <div class="actions">
-<input type="submit" class="btn primary" value="Submit" />
-<a href="<: $c.req.uri_for('/list/'~uri_escape($c.stash.complex.service_name)~'/'~uri_escape($c.stash.complex.section_name)) :>" class="btn">Cancel</a>
-<button type="button" class="btn danger hxr_confirm_button" data-confirm="Remove '<: $c.stash.complex.graph_name :>'?" data-uri="<: $c.req.uri_for('/delete_complex/'~$c.stash.complex.id) :>">Remove</button>
+<input type="submit" class="btn btn-default primary" value="Submit" />
+<a href="<: $c.req.uri_for('/list/'~uri_escape($c.stash.complex.service_name)~'/'~uri_escape($c.stash.complex.section_name)) :>" class="btn btn-default">Cancel</a>
+<button type="button" class="btn btn-danger hxr_confirm_button" data-confirm="Remove '<: $c.stash.complex.graph_name :>'?" data-uri="<: $c.req.uri_for('/delete_complex/'~$c.stash.complex.id) :>">Remove</button>
 </div>
 
 </form>

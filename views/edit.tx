@@ -140,9 +140,9 @@ unit
 </fieldset>
 
 <div class="actions">
-<input type="submit" class="btn primary" value="Submit" />
+<input type="submit" class="btn btn-primary" value="Submit" />
 <a href="<: $c.req.uri_for('/list/'~uri_escape($graph.service_name)~'/'~uri_escape($graph.section_name)) :>" class="btn">Cancel</a>
-<button type="button" class="btn danger hxr_confirm_button" data-confirm="remove '<: $graph.graph_name :>'?" data-uri="<: $c.req.uri_for('/delete/'~uri_escape($graph.service_name)~'/'~uri_escape($graph.section_name)~'/'~uri_escape($graph.graph_name)) :>">remove</button>
+<button type="button" class="btn btn-danger hxr_confirm_button" data-confirm="remove '<: $graph.graph_name :>'?" data-uri="<: $c.req.uri_for('/delete/'~uri_escape($graph.service_name)~'/'~uri_escape($graph.section_name)~'/'~uri_escape($graph.graph_name)) :>">remove</button>
 </div>
 
 </form>

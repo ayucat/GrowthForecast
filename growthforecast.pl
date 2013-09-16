@@ -9,7 +9,7 @@ use File::Basename;
 use Getopt::Long;
 use Plack::Loader;
 use Plack::Builder;
-use Plack::Builder::Conditionals;
+use Plack::Middleware::Conditional;
 use Plack::Util;
 use GrowthForecast;
 use GrowthForecast::Web;

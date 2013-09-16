@@ -8,18 +8,18 @@
 <small><: $graph.description :></small></h2>
 <p>
 : if $graph.complex_graph {
-<a class="label success" style="cursor: pointer" href="<: $c.req.uri_for('/edit_complex/'~$graph.id) :>">Setting</a>
-<span class="label important">Complex Graph</span>
+<a class="label label-success" style="cursor: pointer" href="<: $c.req.uri_for('/edit_complex/'~$graph.id) :>">Setting</a>
+<span class="label label-warning">Complex Graph</span>
 : } else {
-<a class="label success" style="cursor: pointer" href="<: $c.req.uri_for('/edit/'~uri_escape($graph.service_name)~'/'~uri_escape($graph.section_name)~'/'~uri_escape($graph.graph_name)) :>">Setting</a>
-<span class="label">current</span> <: $graph.number | format_number :>
-<span class="label">mode</span> <: $graph.mode :>
+<a class="label label-success" style="cursor: pointer" href="<: $c.req.uri_for('/edit/'~uri_escape($graph.service_name)~'/'~uri_escape($graph.section_name)~'/'~uri_escape($graph.graph_name)) :>">Setting</a>
+<span class="label label-default">current</span> <: $graph.number | format_number :>
+<span class="label label-default">mode</span> <: $graph.mode :>
 : }
-<span class="label">created_at</span> <: $graph.created_at :>
-<span class="label">updated_at</span> <: $graph.updated_at :>
+<span class="label label-default">created_at</span> <: $graph.created_at :>
+<span class="label label-default">updated_at</span> <: $graph.updated_at :>
 </p>
 
-<div style="margin-bottom: 13px; text-align: center">
+<div style="margin-bottom: 13px; text-align: center;">
 : if ! $graph.complex_graph {
   : my $gmodes = ( $graph.gmode == 'both' ) ? ['gauge','subtract'] : ( $graph.gmode == 'gauge') ? ['gauge'] : ['subtract']
   : for $gmodes -> $gmode {

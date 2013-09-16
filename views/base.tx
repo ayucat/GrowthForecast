@@ -2,7 +2,8 @@
 <html>
 <head>
 <meta http-equiv="Content-Type" content="text/html" charset="utf-8">
-<link rel="stylesheet" href="<: $c.req.uri_for('/css/bootstrap.min.css') :>">
+<!-- link rel="stylesheet" href="/css/bootstrap.min.css" -->
+<link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap.min.css?3.0.0">
 <style type='text/css'>
 body {
   background-color: #fff;
@@ -50,17 +51,17 @@ GrowthForecast
 </head>
 <body>
 
-<div class="topbar">
-<div class="topbar-inner">
+<header class="navbar navbar-inverse navbar-fixed-top">
 <div class="container">
-<a class="brand" href="<: $c.req.uri_for('/') :>">GrowthForecast</a>
-<ul class="nav">
+<div class="navbar-header"><a class="navbar-brand" href="<: $c.req.uri_for('/') :>">GrowthForecast</a></div>
+<nav class="collapse navbar-collapse bs-navbar-collapse">
+<ul class="nav navbar-nav">
 <li><a href="<: $c.req.uri_for('/') :>">Home</a></li>
 <li><a href="<: $c.req.uri_for('/docs') :>">Docs</a></li>
 </ul>
+</nav>
 </div>
-</div>
-</div>
+</header>
 
 <div class="container">
 
@@ -70,7 +71,7 @@ GrowthForecast
 </div>
 
 <div class="row">
-<div class="span16">
+<div class="col-md-12 col-sm-6 col-xs-12">
 : block content -> { }
 </div>
 </div>
@@ -84,9 +85,9 @@ GrowthForecast
 </div>
 </footer>
 
-<script type="text/javascript" src="<: $c.req.uri_for('/js/jquery-1.5.2.min.js') :>"></script>
-<script type="text/javascript" src="<: $c.req.uri_for('/js/bootstrap-modal.js') :>"></script>
-<script type="text/javascript" src="<: $c.req.uri_for('/js/bootstrap-alerts.js') :>"></script>
+<script type="text/javascript" src="//code.jquery.com/jquery-1.10.2.min.js"></script>
+<script type="text/javascript" src="//raw.github.com/jschr/bootstrap-modal/master/js/bootstrap-modal.js"></script>
+<script type="text/javascript" src="//raw.github.com/twbs/bootstrap/master/js/alert.js"></script>
 <script type="text/javascript">
 $(function(){
   $('form.hxrpost').each(setHxrpost);
@@ -140,7 +141,7 @@ function setHxrConfirmBtn() {
 '<form method="post" action="#">'+
 '<div class="modal-header"><h3>confirm</h3></div>'+
 '<div class="modal-body"><div class="alert-message error hide">System Error!</div><p>confirm</p></div>'+
-'<div class="modal-footer"><input type="submit" class="btn danger" value="confirm" /></div>'+
+'<div class="modal-footer"><input type="submit" class="btn btn-danger" value="confirm" /></div>'+
 '</form></div>');
   modal.find('h3').text($(mybtn).text());
   modal.find('input[type=submit]').attr('value',$(mybtn).text());
