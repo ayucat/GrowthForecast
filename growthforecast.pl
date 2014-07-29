@@ -14,12 +14,15 @@ use Plack::Util;
 use GrowthForecast;
 use GrowthForecast::Web;
 use GrowthForecast::Worker;
+use IO::Socket::UNIX;
 use Proclet;
+use Starlet '0.21';
 use File::ShareDir qw/dist_dir/;
 use Cwd;
 use File::Path qw/mkpath/;
 use Log::Minimal;
 use Pod::Usage;
+use POSIX qw//;
 
 my $port = 5125;
 my $host = 0;
@@ -29,17 +32,38 @@ Getopt::Long::Configure ("no_ignore_case");
 GetOptions(
     'port=s' => \$port,
     'host=s' => \$host,
+    'socket=s' => \my $socket,
     'front-proxy=s' => \@front_proxy,
     'allow-from=s' => \@allow_from,
     'disable-1min-metrics' => \my $disable_short,
+    'disable-subtract' => \my $disable_subtract,
     'enable-float-number' => \my $enable_float_number,
     'with-mysql=s' => \my $mysql,
     'data-dir=s' => \my $data_dir,
     'log-format=s' => \my $log_format,
     'web-max-workers=i' => \my $web_max_workers,
     'rrdcached=s' => \my $rrdcached,
+    'mount=s' => \my $mount,
+    'time-zone=s' => \my $timezone,
     "h|help" => \my $help,
+    'v|version' => \my $version,
 );
+
+if ( $timezone ) {
+    eval {
+        $ENV{TZ} = $timezone;
+        POSIX::tzset;
+    };
+    if ( $@ ) {
+        die "Failed timezone set to '$timezone': $@";
+    }
+}
+
+if ( $version ) {
+    print "GrowthForecast version $GrowthForecast::VERSION\n\n";
+    print "Try `growthforecast.pl --help` for more options.\n";
+    exit 0;
+}
 
 if ( $help ) {
     pod2usage(-verbose=>2,-exitval=>0);
@@ -70,8 +94,24 @@ else {
     unlink("$data_dir/$$.tmp");
 }
 
+my $sock;
+if ( $socket ) {
+    if (-S $socket) {
+        warn "removing existing socket file:$socket";
+        unlink $socket
+            or die "failed to remove existing socket file:$socket:$!";
+    }
+    unlink $socket;
+    $sock = IO::Socket::UNIX->new(
+        Listen => Socket::SOMAXCONN(),
+        Local  => $socket,
+    ) or die "failed to listen to file $socket:$!";
+    $ENV{SERVER_STARTER_PORT} = $socket."=".$sock->fileno;
+}
+
 my $proclet = Proclet->new;
 $proclet->service(
+    tag  => 'worker_1min',
     code => sub {
         local $0 = "$0 (GrowthForecast::Worker 1min)";
         my $worker = GrowthForecast::Worker->new(
@@ -80,12 +120,14 @@ $proclet->service(
             mysql => $mysql,
             float_number => $enable_float_number,
             rrdcached => $rrdcached,
+            disable_subtract => $disable_subtract,
         );
         $worker->run('short');        
     }
 ) if !$disable_short;
 
 $proclet->service(
+    tag  => 'worker',
     code => sub {
         local $0 = "$0 (GrowthForecast::Worker)";
         my $worker = GrowthForecast::Worker->new(
@@ -94,12 +136,14 @@ $proclet->service(
             mysql => $mysql,
             float_number => $enable_float_number,
             rrdcached => $rrdcached,
+            disable_subtract => $disable_subtract,
         );
         $worker->run;
     }
 );
 
 $proclet->service(
+    tag  => 'web',
     code => sub {
         local $0 = "$0 (GrowthForecast::Web)";
         my $web = GrowthForecast::Web->new(
@@ -109,11 +153,15 @@ $proclet->service(
             mysql => $mysql,
             float_number => $enable_float_number,
             rrdcached => $rrdcached,
+            disable_subtract => $disable_subtract,
         );
         my $app = builder {
             enable 'Lint';
             enable 'StackTrace';
-            if ( @front_proxy ) {
+            if ( $sock ) {
+                enable 'ReverseProxy';
+            }
+            elsif ( @front_proxy ) {
                 enable match_if addr(\@front_proxy), 'ReverseProxy';
             }
             if ( @allow_from ) {
@@ -133,8 +181,9 @@ $proclet->service(
                                              });
                 }
             };
+            my $static_regexp = qr!^/(?:(?:css|fonts|js|images)/|favicon\.ico$)!;
             enable 'Static',
-                path => qr!^/(?:(?:css|js|images)/|favicon\.ico$)!,
+                path => $mount ? sub { s!^/$mount!!; $_ =~ $static_regexp } : $static_regexp,
                 root => $root_dir . '/public';
             enable 'Scope::Container';
             if ($log_format) {
@@ -150,7 +199,12 @@ $proclet->service(
                 }
                 enable 'AxsLog', %args;
             }
-            $web->psgi;
+            if ($mount) {
+                mount "/$mount" => $web->psgi;
+            }
+            else {
+                $web->psgi;
+            }
         };
         my $loader = Plack::Loader->load(
             'Starlet',
@@ -229,6 +283,10 @@ TCP port listen on. Default is 5125
 
 IP address to listen on
 
+=item --socket
+
+File path to UNIX domain socket to bind. If enabled unix domain socket, GrowthForecast does not bind any TCP port
+
 =item --front-proxy
 
 IP addresses or CIDR of reverse proxy
@@ -242,6 +300,10 @@ Default is empty (allow access from any remote ip address)
 
 don't generate 1min rrddata and graph
 Default is "1" (enabled) 
+
+=item --disable-subtract
+
+Disable gmode `subtract`. Default is "1" (enabled)
 
 =item --enable-float-number
 
@@ -268,6 +330,19 @@ rrdcached address. format is like either of
    <hostname-or-ipv4>:<port>
 
 See the manual of rrdcached for more details. Default does not use rrdcached.
+
+=item --mount
+
+Provide GrowthForecast with specify url path.
+Default is empty ( provide GrowthForecast on root path )
+
+=item --time-zone
+
+Set the system time zone for GrowthForecast. Default is system timezone.
+
+=item -v --version
+
+Display version
 
 =item -h --help
 
@@ -305,7 +380,7 @@ Sample GRANT statement
 Give USERNAME and PASSWORD to GrowthForecast by environment value
 
   $ MYSQL_USER=www MYSQL_PASSWORD=foobar growthforecast.pl \\
-      --data-dir /home/user/growthforeacst \\
+      --data-dir /home/user/growthforecast \\
       -with-mysql dbi:mysql:growthforecast;hostname=localhost 
 
 AUTHOR

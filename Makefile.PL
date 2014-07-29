@@ -25,10 +25,16 @@ views/list.tx
 views/view.tx
 views/view_graph.tx
 public/css/bootstrap.min.css
-public/js/bootstrap-alerts.js
-public/js/bootstrap-modal.js
-public/js/html5jp/cpick.js
-public/js/jquery-1.5.2.min.js
+public/favicon.ico
+public/fonts/glyphicons-halflings-regular.eot
+public/fonts/glyphicons-halflings-regular.svg
+public/fonts/glyphicons-halflings-regular.ttf
+public/fonts/glyphicons-halflings-regular.woff
+public/js/bootstrap.min.js
+public/js/jquery-1.10.2.min.js
+public/js/jquery-1.10.2.min.map
+public/js/jquery.storageapi.min.js
+public/js/site.js
 !;
 
 for my $file ( @files ) {

@@ -10,7 +10,8 @@ sub new {
     my $class = shift;
     my $mysql = shift;
     my $float_number = shift;
-    bless { mysql => $mysql, float_number => $float_number }, $class;
+    my $disable_subtract = shift;
+    bless { mysql => $mysql, float_number => $float_number, disable_subtract => $disable_subtract }, $class;
 }
 
 sub number_type {
@@ -48,15 +49,17 @@ CREATE TABLE IF NOT EXISTS graphs (
     sllimit      $number_type NOT NULL DEFAULT 0,
     type         VARCHAR(255) NOT NULL DEFAULT 'AREA',
     stype        VARCHAR(255) NOT NULL DEFAULT 'AREA',
-    meta         TEXT NOT NULL,
+    meta         TEXT,
     created_at   INT UNSIGNED NOT NULL,
     updated_at   INT UNSIGNED NOT NULL,
+    timestamp    INT UNSIGNED DEFAULT NULL,
     PRIMARY KEY (id),
     UNIQUE  (service_name, section_name, graph_name)
 )  ENGINE=InnoDB DEFAULT CHARSET=utf8
 EOF
 
-        $dbh->do(<<EOF);
+        unless ( $self->{disable_subtract} ) {
+            $dbh->do(<<EOF);
 CREATE TABLE IF NOT EXISTS prev_graphs (
     graph_id     INT UNSIGNED NOT NULL,
     number       $number_type NOT NULL DEFAULT 0,
@@ -66,7 +69,7 @@ CREATE TABLE IF NOT EXISTS prev_graphs (
 )  ENGINE=InnoDB DEFAULT CHARSET=utf8
 EOF
 
-        $dbh->do(<<EOF);
+            $dbh->do(<<EOF);
 CREATE TABLE IF NOT EXISTS prev_short_graphs (
     graph_id     INT UNSIGNED NOT NULL,
     number       $number_type NOT NULL DEFAULT 0,
@@ -75,7 +78,7 @@ CREATE TABLE IF NOT EXISTS prev_short_graphs (
     PRIMARY KEY  (graph_id)
 )  ENGINE=InnoDB DEFAULT CHARSET=utf8
 EOF
-
+        }
 
         $dbh->do(<<EOF);
 CREATE TABLE IF NOT EXISTS complex_graphs (
@@ -86,13 +89,50 @@ CREATE TABLE IF NOT EXISTS complex_graphs (
     number       $complex_number_type UNSIGNED NOT NULL DEFAULT 0,
     description  VARCHAR(255) NOT NULL DEFAULT '',
     sort         INT UNSIGNED NOT NULL DEFAULT 0,
-    meta         TEXT NOT NULL,
+    meta         TEXT,
     created_at   INT UNSIGNED NOT NULL,
     updated_at   INT UNSIGNED NOT NULL,
     PRIMARY KEY (id),
     UNIQUE  (service_name, section_name, graph_name)
 )  ENGINE=InnoDB DEFAULT CHARSET=utf8
 EOF
+
+        $dbh->do(<<EOF);
+CREATE TABLE IF NOT EXISTS vrules (
+    id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    graph_path   VARCHAR(255) NOT NULL COLLATE utf8_bin,
+    time         INT UNSIGNED NOT NULL,
+    color        VARCHAR(255) NOT NULL DEFAULT '#FF0000',
+    description  TEXT,
+    dashes       VARCHAR(255) NOT NULL DEFAULT '',
+    PRIMARY KEY (id),
+    INDEX time_graph_path (time, graph_path)
+)  ENGINE=InnoDB DEFAULT CHARSET=utf8
+EOF
+
+        {
+            my $sth = $dbh->column_info(undef,undef,"vrules",undef);
+            my $columns = $sth->fetchall_arrayref(+{ COLUMN_NAME => 1 });
+            my %graphs_columns;
+            $graphs_columns{$_->{COLUMN_NAME}} = 1 for @$columns;
+            if ( ! exists $graphs_columns{dashes} ) {
+                infof("add new column 'dashes'");
+                $dbh->do(q{ALTER TABLE vrules ADD dashes VARCHAR(255) NOT NULL DEFAULT ''});
+            }
+        }
+
+        # timestamp
+        {
+            my $sth = $dbh->column_info(undef,undef,"graphs",undef);
+            my $columns = $sth->fetchall_arrayref(+{ COLUMN_NAME => 1 });
+            my %graphs_columns;
+            $graphs_columns{$_->{COLUMN_NAME}} = 1 for @$columns;
+            if ( ! exists $graphs_columns{timestamp} ) {
+                infof("add new column 'timestamp'");
+                $dbh->do(q{ALTER TABLE graphs ADD timestamp INT UNSIGNED DEFAULT NULL});
+            }
+        }
+
         return;
     };
 }

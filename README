@@ -39,6 +39,10 @@ OPTIONS
     --host
         IP address to listen on
 
+    --socket
+        File path to UNIX domain socket to bind. If enabled unix domain
+        socket, GrowthForecast does not bind any TCP port
+
     --front-proxy
         IP addresses or CIDR of reverse proxy
 
@@ -49,13 +53,16 @@ OPTIONS
     --disable-1min-metrics
         don't generate 1min rrddata and graph Default is "1" (enabled)
 
+    --disable-subtract
+        Disable gmode `subtract`. Default is "1" (enabled)
+
     --enable-float-number
         Store numbers of graph data as float rather than integer. Default is
         "0" (disabled)
 
     --with-mysql
         DB connection setting to store metadata. format like
-        dbi:mysql:[dbname];hostname=[hostname] Default is no mysql setting.
+        dbi:mysql:[dbname];hostname=[hostnaem] Default is no mysql setting.
         GrowthForecast save metadata to SQLite
 
     --web-max-workers
@@ -72,6 +79,17 @@ OPTIONS
 
         See the manual of rrdcached for more details. Default does not use
         rrdcached.
+
+    --mount
+        Provide GrowthForecast with specify url path. Default is empty (
+        provide GrowthForecast on root path )
+
+    --time-zone
+        Set the system time zone for GrowthForecast. Default is system
+        timezone.
+
+    -v --version
+        Display version
 
     -h --help
         Display help

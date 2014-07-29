@@ -9,15 +9,17 @@ use Time::Piece;
 use GrowthForecast::Data;
 use GrowthForecast::RRD;
 use Log::Minimal;
-use Class::Accessor::Lite ( rw => [qw/short mysql data_dir float_number rrdcached/] );
-use CGI;
+use Class::Accessor::Lite ( rw => [qw/short mysql data_dir float_number rrdcached disable_subtract/] );
+use URI::Escape qw/uri_escape_utf8/;
+
+my $_JSON = JSON->new()->allow_blessed(1)->convert_blessed(1)->ascii(1);
 
 sub data {
     my $self = shift;
     $self->{__data} ||= 
         $self->mysql 
-            ? GrowthForecast::Data::MySQL->new($self->mysql, $self->float_number)
-            : GrowthForecast::Data->new($self->data_dir, $self->float_number);
+            ? GrowthForecast::Data::MySQL->new($self->mysql, $self->float_number, $self->disable_subtract)
+            : GrowthForecast::Data->new($self->data_dir, $self->float_number, $self->disable_subtract);
     $self->{__data};
 }
 
@@ -32,8 +34,20 @@ sub rrd {
         data_dir => $self->data_dir,
         root_dir => $self->root_dir,
         rrdcached => $self->rrdcached,
+        disable_subtract => $self->disable_subtract,
+        data => $self->data,
     );
     $self->{__rrd};
+}
+
+sub gmode_choice {
+    my ($self) = @_;
+    return $self->disable_subtract ? qw/gauge/ : qw/gauge subtract/;
+}
+
+sub gmode_choice_edit_graph {
+    my ($self) = @_;
+    return $self->disable_subtract ? qw/gauge/ : qw/gauge subtract both/;
 }
 
 filter 'set_enable_short' => sub {
@@ -79,7 +93,7 @@ sub delete_graph {
 
     $c->render_json({
         error => 0,
-        location => "".$c->req->uri_for(sprintf('/list/%s/%s', map { CGI::escape($c->stash->{graph}->{$_}) } qw/service_name section_name/))
+        location => "".$c->req->uri_for(sprintf('/list/%s/%s', map { uri_escape_utf8($c->stash->{graph}->{$_}) } qw/service_name section_name/))
     });
 };
 
@@ -89,7 +103,7 @@ sub delete_complex {
 
     $c->render_json({
         error => 0,
-        location => "". $c->req->uri_for(sprintf('/list/%s/%s', map { CGI::escape($c->stash->{complex}->{$_}) } qw/service_name section_name/))
+        location => "". $c->req->uri_for(sprintf('/list/%s/%s', map { uri_escape_utf8($c->stash->{complex}->{$_}) } qw/service_name section_name/))
     });
 };
 
@@ -110,19 +124,25 @@ get '/' => sub {
 
 get '/docs' => sub {
     my ( $self, $c )  = @_;
+    $c->stash->{docs} = 1;
     $c->render('docs.tx',{});
 };
 
 get '/add_complex' => sub {
     my ( $self, $c )  = @_;
-    my $graphs = $self->data->get_all_graph_name();
-    $c->render('add_complex.tx',{ graphs => $graphs });
+
+    $c->render('add_complex.tx',{ service_tree => $self->data->get_all_graph_as_tree(),
+                                  disable_subtract => $self->disable_subtract });
 };
 
 get '/edit_complex/:complex_id' => [qw/get_complex/] => sub {
     my ( $self, $c )  = @_;
-    my $graphs = $self->data->get_all_graph_name();
-    $c->render('edit_complex.tx',{ graphs => $graphs });
+    my $path1 = $self->data->get_by_id($c->stash->{complex}->{'path-1'});
+    $c->stash->{complex}->{'path-1-service'} = $path1->{service_name};
+    $c->stash->{complex}->{'path-1-section'} = $path1->{section_name};
+
+    $c->render('edit_complex.tx',{service_tree => $self->data->get_all_graph_as_tree,
+                                  disable_subtract => $self->disable_subtract });
 };
 
 post '/delete_complex/:complex_id' => [qw/get_complex/] => sub {
@@ -154,6 +174,7 @@ post '/add_complex' => sub {
     my @type2 = $c->req->param('type-2');
     my $type2_num = scalar @type2;
     $type2_num = 1 if !$type2_num;
+    my @gmode_choice = $self->gmode_choice;
     my $result = $c->req->validator([
         'service_name' => {
             rule => [
@@ -202,7 +223,7 @@ post '/add_complex' => sub {
         'gmode-1' => {
             rule => [
                 ['NOT_NULL', 'missing'],
-                [['CHOICE',qw/gauge subtract/], 'invalid value'],
+                [['CHOICE',@gmode_choice], 'invalid value'],
             ],
         },
         '@type-2' => {
@@ -223,7 +244,7 @@ post '/add_complex' => sub {
             rule => [
                 [['@SELECTED_NUM',$type2_num,$type2_num], 'invalid mode'],
                 ['NOT_NULL', 'invalid mode'],
-                [['CHOICE',qw/gauge subtract/], 'invalid mode'],
+                [['CHOICE',@gmode_choice], 'invalid mode'],
             ],
         },
         '@stack-2' => {
@@ -249,7 +270,7 @@ post '/add_complex' => sub {
 
     $c->render_json({
         error => 0,
-        location => $c->req->uri_for('/list/'.CGI::escape($result->valid('service_name')).'/'.CGI::escape($result->valid('section_name')))->as_string,
+        location => $c->req->uri_for('/list/'.uri_escape_utf8($result->valid('service_name')).'/'.uri_escape_utf8($result->valid('section_name')))->as_string,
     });
 };
 
@@ -259,6 +280,7 @@ post '/edit_complex/:complex_id' => [qw/get_complex/] => sub {
     my @type2 = $c->req->param('type-2');
     my $type2_num = scalar @type2;
     $type2_num = 1 if !$type2_num;
+    my @gmode_choice = $self->gmode_choice;
     my $result = $c->req->validator([
         'service_name' => {
             rule => [
@@ -307,7 +329,7 @@ post '/edit_complex/:complex_id' => [qw/get_complex/] => sub {
         'gmode-1' => {
             rule => [
                 ['NOT_NULL', 'mode is missing'],
-                [['CHOICE',qw/gauge subtract/], 'invalid mode'],
+                [['CHOICE',@gmode_choice], 'invalid mode'],
             ],
         },
         '@type-2' => {
@@ -328,7 +350,7 @@ post '/edit_complex/:complex_id' => [qw/get_complex/] => sub {
             rule => [
                 [['@SELECTED_NUM',$type2_num,$type2_num], 'invalid mode'],
                 ['NOT_NULL', 'invalid mode'],
-                [['CHOICE',qw/gauge subtract/], 'invalid mode'],
+                [['CHOICE',@gmode_choice], 'invalid mode'],
             ],
         },
         '@stack-2' => {
@@ -353,7 +375,7 @@ post '/edit_complex/:complex_id' => [qw/get_complex/] => sub {
 
     $c->render_json({
         error => 0,
-        location => $c->req->uri_for( sprintf '/view_complex/%s/%s/%s', CGI::escape($result->valid('service_name')), CGI::escape($result->valid('section_name')), CGI::escape($result->valid('graph_name')) )->as_string,
+        location => $c->req->uri_for( sprintf '/view_complex/%s/%s/%s', uri_escape_utf8($result->valid('service_name')), uri_escape_utf8($result->valid('section_name')), uri_escape_utf8($result->valid('graph_name')) )->as_string,
     });
 };
 
@@ -415,149 +437,171 @@ get '/view_complex/:service_name/:section_name/:graph_name' => [qw/set_enable_sh
     $c->render('view_graph.tx',{ graphs => [$row], view_complex => 1 } );
 };
 
+sub graph_validator {
+    my ( $self ) = @_;
+    my @gmode_choice = $self->gmode_choice;
 
-my $GRAPH_VALIDATOR = [
-    't' => {
-        default => 'd',
-        rule => [
-            [['CHOICE',qw/y m w 3d s3d d sd 8h s8h 4h s4h h sh n sn c sc/],'invalid drawing term'],
-        ],
-    },
-    'gmode' => {
-        default => 'gauge',
-        rule => [
-            [['CHOICE',qw/gauge subtract/],'invalid drawing data'],
-        ],
-    },
-    'from' => {
-        default => localtime(time-86400*8)->strftime('%Y/%m/%d %T'),
-        rule => [
-            [sub{ HTTP::Date::str2time($_[1]) }, 'invalid From datetime'],
-        ],
-    },
-    'to' => {
-        default => localtime()->strftime('%Y/%m/%d %T'),
-        rule => [
-            [sub{ HTTP::Date::str2time($_[1]) }, 'invalid To datetime'],
-        ],
-    },
-    'width' => {
-        default => 390,
-        rule => [
-            ['NATURAL','invalid width'],
-        ],
-    },
-    'height' => {
-        default => 110,
-        rule => [
-            ['NATURAL','invalid height'],
-        ],
-    },
-    'graphonly' => {
-        default => 0,
-        rule => [
-            [['CHOICE',qw/0 1/],'invalid only flag'],
-        ],
-    },
-    'logarithmic' => {
-        default => 0,
-        rule => [
-            [['CHOICE',qw/0 1/],'invalid logarithmic flag'],
-        ],
-    },
-    'background_color' => {
-        default => 'f3f3f3',
-        rule => [
-            [sub{ $_[1] =~ m!^[0-9A-F]{6}$!i || $_[1] =~ m!^[0-9A-F]{8}$!i }, 'invalid background color'],
-        ],
-    },
-    'canvas_color' => {
-        default => 'ffffff',
-        rule => [
-            [sub{ $_[1] =~ m!^[0-9A-F]{6}$!i || $_[1] =~ m!^[0-9A-F]{8}$!i }, 'invalid canvas color'],
-        ],
-    },
-    'font_color' => {
-        default => '000000',
-        rule => [
-            [sub{ $_[1] =~ m!^[0-9A-F]{6}$!i || $_[1] =~ m!^[0-9A-F]{8}$!i }, 'invalid font color'],
-        ],
-    },
-    'frame_color' => {
-        default => '000000',
-        rule => [
-            [sub{ $_[1] =~ m!^[0-9A-F]{6}$!i || $_[1] =~ m!^[0-9A-F]{8}$!i }, 'invalid frame color'],
-        ],
-    },
-    'axis_color' => {
-        default => '000000',
-        rule => [
-            [sub{ $_[1] =~ m!^[0-9A-F]{6}$!i || $_[1] =~ m!^[0-9A-F]{8}$!i }, 'invalid axis color'],
-        ],
-    },
-    'shadea_color' => {
-        default => 'cfcfcf',
-        rule => [
-            [sub{ $_[1] =~ m!^[0-9A-F]{6}$!i || $_[1] =~ m!^[0-9A-F]{8}$!i }, 'invalid shadea color'],
-        ],
-    },
-    'shadeb_color' => {
-        default => '9e9e9e',
-        rule => [
-            [sub{ $_[1] =~ m!^[0-9A-F]{6}$!i || $_[1] =~ m!^[0-9A-F]{8}$!i }, 'invalid shadeb color'],
-        ],
-    },
-    'border' => {
-        default => 3,
-        rule => [
-            ['UINT','invalid border width'],
-        ],
-    },
-    'legend' => {
-        default => 1,
-        rule => [
-            [['CHOICE',qw/0 1/],'invalid legend flag'],
-        ],
-    },
-    'notitle' => {
-        default => 0,
-        rule => [
-            [['CHOICE',qw/0 1/],'invalid title flag'],
-        ],        
-    },
-    'xgrid' => {
-        default => '',
-        rule => [],
-    },
-    'ygrid' => {
-        default => '',
-        rule => [],
-    },
-    'upper_limit' => {
-        default => '',
-        rule => [],
-    },
-    'lower_limit' => {
-        default => '',
-        rule => [],
-    },
-    'rigid' => {
-        default => '0',
-        rule => [
-            [['CHOICE',qw/0 1/],'invalid rigid flag'],
-        ],
-    },
-    'sumup' => {
-        default => 0,
-        rule => [
-            [['CHOICE',qw/0 1/],'invalid sumup flag'],
-        ],
-    },
-];
+    return [
+        't' => {
+            default => 'd',
+            rule => [
+                [['CHOICE',qw/y m w 3d s3d d sd 8h s8h 4h s4h h sh n sn c sc/],'invalid drawing term'],
+            ],
+        },
+        'gmode' => {
+            default => 'gauge',
+            rule => [
+                [['CHOICE',@gmode_choice],'invalid drawing data'],
+            ],
+        },
+        'from' => {
+            default => localtime(time-86400*8)->strftime('%Y/%m/%d %T'),
+            rule => [
+                [sub{ HTTP::Date::str2time($_[1]) }, 'invalid From datetime'],
+            ],
+        },
+        'to' => {
+            default => localtime()->strftime('%Y/%m/%d %T'),
+            rule => [
+                [sub{ HTTP::Date::str2time($_[1]) }, 'invalid To datetime'],
+            ],
+        },
+        'width' => {
+            default => 390,
+            rule => [
+                ['NATURAL','invalid width'],
+            ],
+        },
+        'height' => {
+            default => 110,
+            rule => [
+                ['NATURAL','invalid height'],
+            ],
+        },
+        'graphonly' => {
+            default => 0,
+            rule => [
+                [['CHOICE',qw/0 1/],'invalid only flag'],
+            ],
+        },
+        'logarithmic' => {
+            default => 0,
+            rule => [
+                [['CHOICE',qw/0 1/],'invalid logarithmic flag'],
+            ],
+        },
+        'background_color' => {
+            default => 'f3f3f3',
+            rule => [
+                [sub{ $_[1] =~ m!^[0-9A-F]{6}$!i || $_[1] =~ m!^[0-9A-F]{8}$!i }, 'invalid background color'],
+            ],
+        },
+        'canvas_color' => {
+            default => 'ffffff',
+            rule => [
+                [sub{ $_[1] =~ m!^[0-9A-F]{6}$!i || $_[1] =~ m!^[0-9A-F]{8}$!i }, 'invalid canvas color'],
+            ],
+        },
+        'font_color' => {
+            default => '000000',
+            rule => [
+                [sub{ $_[1] =~ m!^[0-9A-F]{6}$!i || $_[1] =~ m!^[0-9A-F]{8}$!i }, 'invalid font color'],
+            ],
+        },
+        'frame_color' => {
+            default => '000000',
+            rule => [
+                [sub{ $_[1] =~ m!^[0-9A-F]{6}$!i || $_[1] =~ m!^[0-9A-F]{8}$!i }, 'invalid frame color'],
+            ],
+        },
+        'axis_color' => {
+            default => '000000',
+            rule => [
+                [sub{ $_[1] =~ m!^[0-9A-F]{6}$!i || $_[1] =~ m!^[0-9A-F]{8}$!i }, 'invalid axis color'],
+            ],
+        },
+        'shadea_color' => {
+            default => 'cfcfcf',
+            rule => [
+                [sub{ $_[1] =~ m!^[0-9A-F]{6}$!i || $_[1] =~ m!^[0-9A-F]{8}$!i }, 'invalid shadea color'],
+            ],
+        },
+        'shadeb_color' => {
+            default => '9e9e9e',
+            rule => [
+                [sub{ $_[1] =~ m!^[0-9A-F]{6}$!i || $_[1] =~ m!^[0-9A-F]{8}$!i }, 'invalid shadeb color'],
+            ],
+        },
+        'border' => {
+            default => 3,
+            rule => [
+                ['UINT','invalid border width'],
+            ],
+        },
+        'legend' => {
+            default => 1,
+            rule => [
+                [['CHOICE',qw/0 1/],'invalid legend flag'],
+            ],
+        },
+        'notitle' => {
+            default => 0,
+            rule => [
+                [['CHOICE',qw/0 1/],'invalid title flag'],
+            ],
+        },
+        'xgrid' => {
+            default => '',
+            rule => [],
+        },
+        'ygrid' => {
+            default => '',
+            rule => [],
+        },
+        'upper_limit' => {
+            default => '',
+            rule => [],
+        },
+        'lower_limit' => {
+            default => '',
+            rule => [],
+        },
+        'rigid' => {
+            default => '0',
+            rule => [
+                [['CHOICE',qw/0 1/],'invalid rigid flag'],
+            ],
+        },
+        'sumup' => {
+            default => 0,
+            rule => [
+                [['CHOICE',qw/0 1/],'invalid sumup flag'],
+            ],
+        },
+        'step' => {
+            default => '',
+            rule => [
+                ['NATURAL', 'invalid step size'],
+            ],
+        },
+        'cf' => {
+            default => 'AVERAGE',
+            rule => [
+                [['CHOICE', qw/AVERAGE MAX/], 'invalid consolidation function'],
+            ],
+        },
+        'vrule_legend' => {
+            default => 1,
+            rule => [
+                [['CHOICE',qw/0 1/],'invalid vrule_legend flag'],
+            ],
+        },
+    ];
+}
 
 get '/complex/{method:(?:xport|graph|summary)}/:service_name/:section_name/:graph_name' => sub {
     my ( $self, $c )  = @_;
-    my $result = $c->req->validator($GRAPH_VALIDATOR);
+    my $result = $c->req->validator($self->graph_validator);
     my $complex = $self->data->get_complex(
         $c->args->{service_name}, $c->args->{section_name}, $c->args->{graph_name},
     );
@@ -601,7 +645,7 @@ get '/complex/{method:(?:xport|graph|summary)}/:service_name/:section_name/:grap
 
 get '/{method:(?:xport|graph|summary)}/:complex' => sub {
     my ( $self, $c )  = @_;
-    my $result = $c->req->validator($GRAPH_VALIDATOR);
+    my $result = $c->req->validator($self->graph_validator);
     my @complex = split /:/, $c->args->{complex};
     my @data;
     for ( my $i=0; $i < @complex; $i = $i+4 ) {
@@ -641,11 +685,12 @@ get '/{method:(?:xport|graph|summary)}/:complex' => sub {
 
 get '/{method:(?:xport|graph|summary)}/:service_name/:section_name/:graph_name' => [qw/get_graph/] => sub {
     my ( $self, $c )  = @_;
-    my $result = $c->req->validator($GRAPH_VALIDATOR);
+    my $result = $c->req->validator($self->graph_validator);
 
     if ( $c->args->{method} eq 'graph' ) {
         my ($img,$data) = $self->rrd->graph(
-            $c->stash->{graph}, $result->valid->as_hashref
+            $c->stash->{graph}, $result->valid->as_hashref,
+            $self->data,
         );
         $c->res->content_type('image/png');
         $c->res->body($img);
@@ -667,7 +712,7 @@ get '/{method:(?:xport|graph|summary)}/:service_name/:section_name/:graph_name' 
 
 get '/edit/:service_name/:section_name/:graph_name' => [qw/get_graph/] => sub {
     my ( $self, $c )  = @_;
-    $c->render('edit.tx',{graph=>$c->stash->{graph}});
+    $c->render('edit.tx',{graph=>$c->stash->{graph},disable_subtract=>$self->disable_subtract});
 };
 
 post '/edit/:service_name/:section_name/:graph_name' => [qw/get_graph/] => sub {
@@ -716,7 +761,7 @@ post '/edit/:service_name/:section_name/:graph_name' => [qw/get_graph/] => sub {
         'gmode' => {
             rule => [
                 ['NOT_NULL', 'missing'],
-                [['CHOICE',qw/gauge subtract both/], 'invalid value'],
+                [['CHOICE',$self->gmode_choice_edit_graph], 'invalid value'],
             ],
         },
         'adjust' => {
@@ -796,7 +841,7 @@ post '/edit/:service_name/:section_name/:graph_name' => [qw/get_graph/] => sub {
 
     $c->render_json({
         error => 0,
-        location => $c->req->uri_for( sprintf '/view_graph/%s/%s/%s', CGI::escape($result->valid('service_name')), CGI::escape($result->valid('section_name')), CGI::escape($result->valid('graph_name')) )->as_string
+        location => $c->req->uri_for( sprintf '/view_graph/%s/%s/%s', uri_escape_utf8($result->valid('service_name')), uri_escape_utf8($result->valid('section_name')), uri_escape_utf8($result->valid('graph_name')) )->as_string
     });
 };
 
@@ -818,7 +863,7 @@ post '/delete/:service_name/:section_name' => [qw/set_enable_short/] => sub {
 
     $c->render_json({
         error => 0,
-        location => "".$c->req->uri_for(sprintf('/list/%s', CGI::escape($c->args->{service_name})))
+        location => "".$c->req->uri_for(sprintf('/list/%s', uri_escape_utf8($c->args->{service_name})))
     });
 };
 
@@ -850,7 +895,24 @@ post '/api/:service_name/:section_name/:graph_name' => sub {
         'color' => {
             default => '',
             rule => [
-                [sub{ length($_[1]) == 0 || $_[1] =~ m!^#[0-9A-F]{6}$!i }, 'invalid color format'],
+                [sub{ length($_[1]) == 0 || $_[1] =~ m!^#[0-9A-F]{6,8}$!i }, 'invalid color format'],
+            ],
+        },
+        'timestamp' => {
+            default => undef,
+            rule => [
+                # The timestamp is UNIX epoch time
+                # The timestamp of rrdcreate must be larger than 315360000 because of its bug.
+                # cf. https://lists.oetiker.ch/pipermail/rrd-users/2008-January.txt
+                # 10 is because I subtract 10 from the timestamp for rrdcreate as rrdcreate's default does (now - 10s).
+                # cf. http://oss.oetiker.ch/rrdtool/doc/rrdcreate.en.html
+                [sub{ !defined($_[1]) || ($_[1] =~ m!^\-?[\d]+$! && $_[1] > 315360010) }, '"timestamp" must be a INT number and greater than 315360010"']
+            ],
+        },
+        'datetime' => {
+            default => undef,
+            rule => [
+                [ sub { my $t = HTTP::Date::str2time($_[1]); !defined($_[1]) || (defined($t) && $t > 315360010) }, "invalid datetime format or not later than '1979-12-30 00:00:10 UTC'" ]
             ],
         },
     ]);
@@ -866,16 +928,18 @@ post '/api/:service_name/:section_name/:graph_name' => sub {
 
     my $row;
     eval {
+        my $timestamp = $result->valid('timestamp') || HTTP::Date::str2time($result->valid('datetime'));
         $row = $self->data->update(
             $c->args->{service_name}, $c->args->{section_name}, $c->args->{graph_name},
             $result->valid('number'), $result->valid('mode'), $result->valid('color'),
-            $result->valid('description')
+            $timestamp,
         );
     };
     if ( $@ ) {
-        die sprintf "Error:%s %s/%s/%s => %s,%s,%s", 
+        die sprintf "Error:%s %s/%s/%s => %s,%s,%s,%s,%s",
             $@, $c->args->{service_name}, $c->args->{section_name}, $c->args->{graph_name},
-                $result->valid('number'), $result->valid('mode'), $result->valid('color');
+                $result->valid('number'), $result->valid('mode'), $result->valid('color'),
+                $result->valid('timestamp'), $result->valid('datetime');
     }
     
     my @descriptions = $c->req->param('description');
@@ -1045,6 +1109,11 @@ get '/json/list/all' => sub {
     $c->render_json( \@list );
 };
 
+get '/json/list/graph_tree' => sub {
+    my ( $self, $c )  = @_;
+    $c->render_json($self->data->get_all_graph_as_tree());
+};
+
 # TODO in create/edit, validations about json object properties, sub graph id existense, ....
 
 post '/json/create/complex' => sub {
@@ -1086,7 +1155,7 @@ post '/json/create/complex' => sub {
     );
     $c->render_json({
         error => 0,
-        location => $c->req->uri_for('/list/'.CGI::escape($spec->{service_name}).'/'.CGI::escape($spec->{section_name}))->as_string,
+        location => $c->req->uri_for('/list/'.uri_escape_utf8($spec->{service_name}).'/'.uri_escape_utf8($spec->{section_name}))->as_string,
     });
 };
 
@@ -1123,6 +1192,140 @@ post '/json/edit/{type:(?:graph|complex)}/:id' => sub {
         $self->data->update_complex( $id, $internal );
     }
     $c->render_json({ error => 0 });
+};
+
+post '/vrule/api/:service_name/:section_name/:graph_name' => sub {
+    my ( $self, $c )  = @_; $self->add_vrule($c);
+};
+post '/vrule/api/:service_name/:section_name' => sub {
+    my ( $self, $c )  = @_; $self->add_vrule($c);
+};
+post '/vrule/api/:service_name' => sub {
+    my ( $self, $c )  = @_; $self->add_vrule($c);
+};
+post '/vrule/api' => sub {
+    my ( $self, $c )  = @_; $self->add_vrule($c);
+};
+
+sub add_vrule {
+    my ( $self, $c )  = @_;
+    my $result = $c->req->validator([
+        'time' => {
+            default => time(),
+            rule => [
+                [sub {
+                     if ($_[1] !~ /\A[1-9][0-9]*\z/) {
+                         my $t = HTTP::Date::str2time($_[1])
+                             or return;
+                         $_[1] = $t;
+                     }
+                     return 1;
+                 }, 'epoch time or date string is required for "time"'],
+            ],
+        },
+        'color' => {
+            default => '#FF0000',
+            rule => [
+                [sub{ length($_[1]) == 0 || $_[1] =~ m!^#[0-9A-F]{6,8}$!i }, 'invalid color format'],
+            ],
+        },
+        'description' => {
+            default => '',
+            rule => [],
+        },
+        'dashes' => {
+            default => '',
+            rule => [],
+        },
+    ]);
+
+    if ( $result->has_error ) {
+        my $res = $c->render_json({
+            error => 1,
+            messages => $result->messages
+        });
+        $res->status(400);
+        return $res;
+    }
+
+    my $row;
+    eval {
+        my $graph_path = '/'.join('/', $c->args->{service_name}||(), $c->args->{section_name}||(), $c->args->{graph_name}||());
+        $row = $self->data->update_vrule(
+            $graph_path,
+            $result->valid('time'),
+            $result->valid('color'),
+            $result->valid('description'),
+            $result->valid('dashes'),
+        );
+    };
+    if ( $@ ) {
+        die sprintf "Error:%s %s/%s/%s => %s,%s",
+            $@, $c->args->{service_name}, $c->args->{section_name}, $c->args->{graph_name},
+                $result->valid('time'), $result->valid('color');
+    }
+
+    $c->render_json({error=>0, data => $row});
+};
+
+get '/vrule/summary/:service_name/:section_name/:graph_name' => sub {
+    my ( $self, $c )  = @_; $self->summarize_vrule($c);
+};
+get '/vrule/summary/:service_name/:section_name' => sub {
+    my ( $self, $c )  = @_; $self->summarize_vrule($c);
+};
+get '/vrule/summary/:service_name' => sub {
+    my ( $self, $c )  = @_; $self->summarize_vrule($c);
+};
+get '/vrule/summary' => sub {
+    my ( $self, $c )  = @_; $self->summarize_vrule($c);
+};
+
+sub summarize_vrule {
+    my ( $self, $c )  = @_;
+    my $result = $c->req->validator([
+        't' => {
+            default => 'all',
+            rule => [
+                [['CHOICE',qw/all y m w 3d s3d d sd 8h s8h 4h s4h h sh n sn c sc/],'invalid drawing term'],
+            ],
+        },
+        'from' => {
+            default => localtime(time-86400*8)->strftime('%Y/%m/%d %T'),
+            rule => [
+                [sub{ HTTP::Date::str2time($_[1]) }, 'invalid From datetime'],
+            ],
+        },
+        'to' => {
+            default => localtime()->strftime('%Y/%m/%d %T'),
+            rule => [
+                [sub{ HTTP::Date::str2time($_[1]) }, 'invalid To datetime'],
+            ],
+        },
+    ]);
+
+    if ( $result->has_error ) {
+        my $res = $c->render_json({
+            error => 1,
+            messages => $result->messages
+        });
+        $res->status(400);
+        return $res;
+    }
+
+    my $graph_path = '/'.join('/', $c->args->{service_name}||(), $c->args->{section_name}||(), $c->args->{graph_name}||());
+
+    my @vrules;
+    eval {
+        @vrules = $self->data->get_vrule($result->valid('t'), $result->valid('from'), $result->valid('to'), $graph_path);
+    };
+    if ( $@ ) {
+        die sprintf "Error:%s %s/%s/%s => %s,%s,%s",
+            $@, $c->args->{service_name}, $c->args->{section_name}, $c->args->{graph_name},
+                $result->valid('t'), $result->valid('from') , $result->valid('to');
+    }
+
+    $c->render_json(\@vrules);
 };
 
 1;
